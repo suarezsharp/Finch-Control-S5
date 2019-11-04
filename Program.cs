@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using FinchAPI;
 
 namespace Project_FinchControl
@@ -31,6 +33,7 @@ namespace Project_FinchControl
             GETTEMP,
             GETLIGHT,
             PLAYBEEP,
+            MARCH,
             DONE
         }
         static void Main(string[] args)
@@ -172,7 +175,8 @@ namespace Project_FinchControl
                 }
                 else
                 {
-                    DoErrorMessage("Valid inputs are: MoveForward, MoveBackward, StopMotors, Wait, TurnRight, TurnLeft, LEDOn, LEDOff, Done");
+                    DoErrorMessage("Valid inputs are: MoveForward, MoveBackward, StopMotors, Wait, TurnRight, TurnLeft, LEDOn, LEDOff");
+                    Console.WriteLine("GetTemp, GetLight, PlayBeep, March, Done");
                 }
             } while (!didParse);
             return result;
@@ -194,10 +198,12 @@ namespace Project_FinchControl
                 Console.WriteLine();
                 switch (userInput)
                 {
+                    case 'Y':
                     case 'y':
                         inputValidated = true;
                         output = true;
                         break;
+                    case 'N':
                     case 'n':
                         inputValidated = true;
                         output = false;
@@ -308,8 +314,8 @@ namespace Project_FinchControl
                         else
                         {
                             DisplayUPMenuScreen(finchRobot);
-                            break;
                         }
+                        break;
                     case '6':
                     case 'f':
                         if (robotConnected == false)
@@ -337,7 +343,6 @@ namespace Project_FinchControl
                             quitApplication = true;
                             break;
                         }
-
                     default:
                         DoErrorMessage();
                         break;
@@ -385,27 +390,21 @@ namespace Project_FinchControl
         /// </summary>
         static bool DisplayDisconnectFinchRobot(Finch finchRobot)
         {
-            string userInput;
             bool robotConnected;
+            bool verifiedDisconnect;
             DisplayHeader("Disconnection with Finch Robot");
 
-            Console.WriteLine("You're about to disconnect your finch robot. Would you like to continue? [Y/N]");
-            userInput = Console.ReadLine();
-            userInput = userInput.ToLower();
-            switch (userInput)
+            verifiedDisconnect = GetBool("You're about to disconnect your finch robot. Would you like to continue? [Y/N]");
+            if (verifiedDisconnect)
             {
-                case "yes":
-                case "y":
-                case "cont":
-                case "continue":
-                    Console.WriteLine("Disconnecting finch.");
-                    finchRobot.disConnect();
-                    robotConnected = false;
-                    break;
-                default:
-                    Console.WriteLine("Did not disconnect. Returning to menu.");
-                    robotConnected = true;
-                    break;
+                Console.WriteLine("Disconnecting finch.");
+                finchRobot.disConnect();
+                robotConnected = false;
+            }
+            else
+            {
+                Console.WriteLine("Did not disconnect. Returning to menu.");
+                robotConnected = true;
             }
             DisplayContinuePrompt();
             return robotConnected;
@@ -1194,7 +1193,7 @@ namespace Project_FinchControl
         #region UserProgrammingFunctions
 
         /// <summary>
-        /// Displays the data recorder menu screen.
+        /// Displays the User Programming menu screen.
         /// </summary>
         static void DisplayUPMenuScreen(Finch finchRobot)
         {
@@ -1205,6 +1204,12 @@ namespace Project_FinchControl
             (int, int, int) commandParameters = (0, 0, 0);
             string[] commandListNames = { "---", "---", "---", "---" };
             List<Command>[] commandList = new List<Command>[4];
+            for (int i = 0; i < 4; i++)
+            {
+                commandList[i] = new List<Command>();
+                commandList[i].Add(Command.DONE);
+            }
+
             (List<Command>[], string[]) toupleUnpacker;
 
             do
@@ -1217,7 +1222,9 @@ namespace Project_FinchControl
                 Console.WriteLine("2. Create Command List");
                 Console.WriteLine("3. View Command List");
                 Console.WriteLine("4. Execute Command List");
-                Console.WriteLine("5. Quit");
+                Console.WriteLine("5. Save Command List");
+                Console.WriteLine("6. Load Command List");
+                Console.WriteLine("7. Quit");
 
                 menuKey = Console.ReadKey();
                 Console.WriteLine();
@@ -1232,8 +1239,8 @@ namespace Project_FinchControl
                     case '2':
                     case 'b':
                         toupleUnpacker = UPCreateCommandList(commandList, commandListNames);
-                        toupleUnpacker.Item1 = commandList;
-                        toupleUnpacker.Item2 = commandListNames;
+                        commandList = toupleUnpacker.Item1;
+                        commandListNames = toupleUnpacker.Item2;
                         break;
                     case '3':
                     case 'c':
@@ -1255,6 +1262,21 @@ namespace Project_FinchControl
                         break;
                     case '5':
                     case 'e':
+                        WriteCommandsData(commandList, commandListNames);
+                        break;
+                    case '6':
+                    case 'f':
+                        DisplayHeader("Loading Commands List");
+                        Console.WriteLine("You are about to overwrite your current command list.");
+                        if (GetBool("Would you like to continue? [Y/N]"))
+                        {
+                            toupleUnpacker = ReadCommandsData();
+                            commandList = toupleUnpacker.Item1;
+                            commandListNames = toupleUnpacker.Item2;
+                        }
+                        break;
+                    case '7':
+                    case 'g':
                     case 'q':
                         quitMenu = true;
                         break;
@@ -1264,10 +1286,13 @@ namespace Project_FinchControl
             } while (!quitMenu);
         }
 
-        static (int motorSpeed, int ledBrightness, int waitSeconds) GetCommandParameters()
+        /// <summary>
+        /// Gets the parameters to use for all UP commands.
+        /// </summary>
+        static (int motorSpeed, int ledBrightness, int waitMS) GetCommandParameters()
         {
             bool inputConfirmed = true;
-            (int motorSpeed, int ledBrightness, int waitSeconds) commandParameters;
+            (int motorSpeed, int ledBrightness, int waitMS) commandParameters;
             DisplayHeader("Command Parameters");
             commandParameters.motorSpeed = GetInteger("Enter motor speed [0-100]: ");
             if (commandParameters.motorSpeed > 100)
@@ -1293,7 +1318,7 @@ namespace Project_FinchControl
             }
             do
             {
-                commandParameters.waitSeconds = GetInteger("Enter wait time [ms]: ");
+                commandParameters.waitMS = GetInteger("Enter wait time [ms]: ");
                 if (commandParameters.motorSpeed >= 10000)
                 {
                     inputConfirmed = GetBool("Are you sure you'd like to set wait to 10 seconds or more? [Y/N]");
@@ -1308,6 +1333,9 @@ namespace Project_FinchControl
             return commandParameters;
         }
 
+        /// <summary>
+        /// Displays the menu for overwriting command lists.
+        /// </summary>
         static (List<Command>[], string[]) UPCreateCommandList(List<Command>[] commandList, string[] commandListNames)
         {
             char menuChoice;
@@ -1373,6 +1401,9 @@ namespace Project_FinchControl
             return (commandList, commandListNames);
         }
 
+        /// <summary>
+        /// Prompts the user to create a new command list.
+        /// </summary>
         static (List<Command>, string) UPGetCommandList()
         {
             //todo Modify the UPGetCommandList method to return a touple of parameters.
@@ -1381,7 +1412,8 @@ namespace Project_FinchControl
             string commandListName;
             DisplayHeader("New Command List");
             Console.WriteLine("Valid Commands Are:");
-            Console.WriteLine("MoveForward, MoveBackward, StopMotors, Wait, TurnRight, TurnLeft, LEDOn, LEDOff, Done");
+            Console.WriteLine("MoveForward, MoveBackward, StopMotors, Wait, TurnRight, TurnLeft, LEDOn, LEDOff");
+            Console.WriteLine("GetTemp, GetLight, PlayBeep, March, Done");
             Console.WriteLine("Enter command \"Done\" to finish the list.");
             do
             {
@@ -1394,11 +1426,15 @@ namespace Project_FinchControl
             Console.WriteLine($"Creating list \"{commandListName}\" of inputs: ");
             foreach (Command command in commandList)
             {
-                Console.Write(command + ", ");
+                if (command == Command.DONE) Console.WriteLine(command);
+                if (command != Command.DONE) Console.Write(command + ", ");
             }
             return (commandList, commandListName);
         }
 
+        /// <summary>
+        /// View all created command lists.
+        /// </summary>
         static void UPViewCommandList(List<Command>[] commandList, string[] commandListNames)
         {
             char menuChoice;
@@ -1499,6 +1535,9 @@ namespace Project_FinchControl
             } while (!quitMenu);
         }
 
+        /// <summary>
+        /// Displays the menu to choose which command list to execute.
+        /// </summary>
         static void UPExecuteCommandList(Finch finchRobot, List<Command>[] commandList, string[] commandListNames,
             (int, int, int) commandParameters)
         {
@@ -1586,8 +1625,11 @@ namespace Project_FinchControl
             } while (!quitMenu);
         }
 
+        /// <summary>
+        /// Executes a command list, according to the commands it contains.
+        /// </summary>
         static void UPExecute(Finch finchRobot, List<Command> commandList, string commandListName,
-            (int motorSpeed, int ledBrightness, int waitSeconds) commandParameters)
+            (int motorSpeed, int ledBrightness, int waitMS) commandParameters)
         {
             bool doRepeats = false;
             DisplayHeader("Execute Command List");
@@ -1609,12 +1651,12 @@ namespace Project_FinchControl
                         case Command.MOVEFORWARD:
                             finchRobot.setMotors(commandParameters.motorSpeed, commandParameters.motorSpeed);
                             Console.WriteLine("Executing command \"MOVEFORWARD\"");
-                            finchRobot.wait(commandParameters.waitSeconds * 1000);
+                            finchRobot.wait(commandParameters.waitMS);
                             break;
                         case Command.MOVEBACKWARD:
                             finchRobot.setMotors(-commandParameters.motorSpeed, -commandParameters.motorSpeed);
                             Console.WriteLine("Executing command \"MOVEBACKWARD\"");
-                            finchRobot.wait(commandParameters.waitSeconds * 1000);
+                            finchRobot.wait(commandParameters.waitMS);
                             break;
                         case Command.STOPMOTORS:
                             finchRobot.setMotors(0, 0);
@@ -1622,17 +1664,17 @@ namespace Project_FinchControl
                             break;
                         case Command.WAIT:
                             Console.WriteLine("Executing command \"WAIT\"");
-                            finchRobot.wait(commandParameters.waitSeconds * 1000);
+                            finchRobot.wait(commandParameters.waitMS);
                             break;
                         case Command.TURNRIGHT:
                             Console.WriteLine("Executing command \"TURNRIGHT\"");
                             finchRobot.setMotors(commandParameters.motorSpeed, -commandParameters.motorSpeed);
-                            finchRobot.wait(commandParameters.waitSeconds * 1000);
+                            finchRobot.wait(commandParameters.waitMS);
                             break;
                         case Command.TURNLEFT:
                             Console.WriteLine("Executing command \"TURNLEFT\"");
                             finchRobot.setMotors(-commandParameters.motorSpeed, commandParameters.motorSpeed);
-                            finchRobot.wait(commandParameters.waitSeconds * 1000);
+                            finchRobot.wait(commandParameters.waitMS);
                             break;
                         case Command.LEDON:
                             Console.WriteLine("Executing command \"LEDON\"");
@@ -1641,9 +1683,6 @@ namespace Project_FinchControl
                         case Command.LEDOFF:
                             Console.WriteLine("Executing command \"LEDOFF\"");
                             finchRobot.setLED(0, 0, 0);
-                            break;
-                        case Command.DONE:
-                            Console.WriteLine("End of commands.");
                             break;
                         case Command.GETTEMP:
                             Console.WriteLine("Ambient temperature: {0:d2}", finchRobot.getTemperature());
@@ -1654,8 +1693,24 @@ namespace Project_FinchControl
                             break;
                         case Command.PLAYBEEP:
                             finchRobot.noteOn(361);
-                            finchRobot.wait(commandParameters.waitSeconds);
+                            finchRobot.wait(commandParameters.waitMS * 1000);
                             finchRobot.noteOff();
+                            break;
+                        case Command.MARCH:
+                            Console.WriteLine("Executing command \"MOVEFORWARD\"");
+                            finchRobot.setLED(0, 255, 0);
+                            for (int i = 0; i < 4; i++)
+                            {
+                                finchRobot.noteOn(361);
+                                finchRobot.setMotors(commandParameters.motorSpeed, commandParameters.motorSpeed);
+                                finchRobot.wait(commandParameters.waitMS / 4);
+                                finchRobot.noteOff();
+                                finchRobot.setMotors(0, 0);
+                                finchRobot.wait(commandParameters.waitMS / 4);
+                            }
+                            break;
+                        case Command.DONE:
+                            Console.WriteLine("End of commands.");
                             break;
                         default:
                             break;
@@ -1665,6 +1720,83 @@ namespace Project_FinchControl
                 doRepeats = GetBool("Would you like to repeat the command? [Y/N]");
             } while (doRepeats);
 
+        }
+        #endregion
+
+        #region Persistence
+
+        /// <summary>
+        /// Overwrites the previous Commands.txt file with a new saved command list.
+        /// </summary>
+        /// <param name="Commands"></param>
+        /// <param name="stringNames"></param>
+        static void WriteCommandsData(List<Command>[] Commands, string[] stringNames)
+        {
+            DisplayHeader("Saving Commands List");
+            Console.WriteLine("You are about to overwrite your saved command list.");
+            if (GetBool("Would you like to continue? [Y/N]"))
+            {
+                string dataPath = @"Data\Commands.txt";
+                List<string> writeStrings = new List<string>();
+                StringBuilder sb = new StringBuilder();
+                File.Delete(dataPath);
+                for (int i = 0; i < 4; i++)
+                {
+                    foreach (Command command in Commands[i])
+                    {
+                        if (command == Command.DONE) sb = sb.Append(command.ToString());
+                        if (command != Command.DONE) sb = sb.Append(command.ToString() + ", ");
+                    }
+                    writeStrings.Add(sb.ToString());
+                    Console.WriteLine($"Wrote command list \"{sb.ToString()}\".");
+                    sb = sb.Clear();
+                }
+                foreach (string strings in stringNames)
+                {
+                    writeStrings.Add(strings);
+                    Console.WriteLine($"Wrote command name \"{strings}\".");
+                }
+                File.WriteAllLines(dataPath, writeStrings);
+                Console.WriteLine("Write complete.");
+                DisplayContinuePrompt();
+            }
+
+        }
+
+        /// <summary>
+        /// Reads from the Commands.txt file to overwrite the current command list.
+        /// </summary>
+        static (List<Command>[], string[]) ReadCommandsData()
+        {
+
+            List<Command>[] returnListArray = new List<Command>[4];
+            for (int i = 0; i < 4; i++)
+            {
+                returnListArray[i] = new List<Command>();
+            }
+            string[] returnNames = new string[4];
+            string[] splitStrings;
+            string dataPath = @"Data\Commands.txt";
+            string[] textLines = File.ReadAllLines(dataPath);
+            Command commandElement;
+            for (int i = 0; i < 4; i++)
+            {
+                splitStrings = textLines[i].Split(',');
+                foreach (string command in splitStrings)
+                {
+                    Enum.TryParse(command, true, out commandElement);
+                    returnListArray[i].Add(commandElement);
+                    Console.WriteLine($"Built command {commandElement} into list #{i + 1}");
+                }
+            }
+            for (int i = 4; i < 8; i++)
+            {
+                returnNames[i - 4] = textLines[i];
+                Console.WriteLine($"Built name \"{textLines[i]}\" into list #{i - 4}");
+            }
+            Console.WriteLine("Read complete.");
+            DisplayContinuePrompt();
+            return (returnListArray, returnNames);
         }
         #endregion
     }
